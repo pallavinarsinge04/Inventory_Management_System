@@ -5,13 +5,96 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enterprise Inventory Management System</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Authentication Modal Overlay */
+        .auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .auth-card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 380px;
+            padding: 32px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            text-align: center;
+        }
+
+        .auth-card h3 {
+            font-size: 1.4rem;
+            color: #1e293b;
+            margin-bottom: 6px;
+        }
+
+        .auth-card p {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+
+        .auth-card .form-group {
+            text-align: left;
+            margin-bottom: 16px;
+        }
+
+        .user-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
 </head>
 <body>
+
+    <!-- Admin Authentication Modal Overlay -->
+    <div id="login-modal" class="auth-overlay">
+        <div class="auth-card">
+            <h3>🔒 Admin Authentication</h3>
+            <p>Operand Technologies • Client Portal</p>
+            
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-user">Username</label>
+                    <input type="text" id="login-user" placeholder="Enter username (e.g., admin)" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="login-pass">Password</label>
+                    <input type="password" id="login-pass" placeholder="••••••••" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Sign In to Dashboard</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Container -->
     <div class="app-container">
         <!-- Header -->
-        <header class="main-header">
-            <h1>📦 Inventory & Order Management System</h1>
-            <p>Operand Technologies • Client-Facing Application Portal</p>
+        <header class="main-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>📦 Inventory & Order Management System</h1>
+                <p>Operand Technologies • Client-Facing Application Portal</p>
+            </div>
+            <!-- Logout Navigation Control -->
+            <div id="user-controls" class="user-nav hidden">
+                <button id="logout-btn" class="btn btn-secondary" onclick="handleLogout()">🚪 Logout</button>
+            </div>
         </header>
 
         <!-- Main Content -->
