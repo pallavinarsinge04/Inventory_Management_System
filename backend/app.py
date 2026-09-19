@@ -1,76 +1,102 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector
-from config import DB_CONFIG
+from supabase import create_client, Client
+
+RAW_URL = "https://vrputjlowmijaxeuhaj.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZycHV0amxvd21pamF4eGV1aGFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NzI2ODMsImV4cCI6MjEwNDU0ODY4M30.0E0FWJ4qHmXvq1z15Fi-WjCwiKbTdBIwA6sJMfCskLU"
+
+SUPABASE_URL = RAW_URL.strip().rstrip('/')
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend integration
+CORS(app)
 
-def get_db_connection():
-    """Establishes connection with MySQL database."""
-    return mysql.connector.connect(**DB_CONFIG)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------------------------------------------------
-# REST API ENDPOINTS
-# ---------------------------------------------------------
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "Password123"
+SECRET_TOKEN = "Bearer secret-admin-session-token"
 
-# GET: Fetch all inventory items
+
+def is_authenticated():
+    auth_header = request.headers.get('Authorization')
+    return auth_header == SECRET_TOKEN
+
+
+@app.route('/')
+def home():
+    return jsonify({
+        "status": "Online",
+        "message": "Inventory Management API is running."
+    }), 200
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json or {}
+    username = data.get('username')
+    password = data.get('password')
+
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        return jsonify({
+            "success": True,
+            "token": "secret-admin-session-token",
+            "message": "Login successful"
+        }), 200
+    return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+
 @app.route('/api/products', methods=['GET'])
 def get_products():
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM products ORDER BY id DESC")
-        products = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return jsonify({"success": True, "data": products}), 200
+        response = supabase.table('products').select('*').order('id', desc=True).execute()
+        return jsonify({"success": True, "data": response.data}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# POST: Add a new inventory product
+
 @app.route('/api/products', methods=['POST'])
 def add_product():
-    try:
-        data = request.json
-        name = data.get('name')
-        category = data.get('category')
-        quantity = int(data.get('quantity', 0))
-        price = float(data.get('price', 0.0))
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
 
-        # Determine automated status based on stock level
+    try:
+        data = request.json or {}
+        quantity = int(data.get('quantity', 0))
+        
         status = 'In Stock'
         if quantity == 0:
             status = 'Out of Stock'
         elif quantity <= 5:
             status = 'Low Stock'
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        query = "INSERT INTO products (name, category, quantity, price, status) VALUES (%s, %s, %s, %s, %s)"
-        cursor.execute(query, (name, category, quantity, price, status))
-        conn.commit()
-        product_id = cursor.lastrowid
-        cursor.close()
-        conn.close()
+        payload = {
+            "name": data.get('name'),
+            "category": data.get('category'),
+            "quantity": quantity,
+            "price": float(data.get('price', 0.0)),
+            "status": status
+        }
 
-        return jsonify({"success": True, "message": "Product added successfully", "id": product_id}), 201
+        response = supabase.table('products').insert(payload).execute()
+        return jsonify({"success": True, "data": response.data}), 201
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# DELETE: Remove an inventory item
+
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 def delete_product(product_id):
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM products WHERE id = %s", (product_id,))
-        conn.commit()
-        cursor.close()
-        conn.close()
+        supabase.table('products').delete().eq('id', product_id).execute()
         return jsonify({"success": True, "message": f"Product {product_id} deleted"}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
