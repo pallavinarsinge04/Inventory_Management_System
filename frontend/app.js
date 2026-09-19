@@ -1,118 +1,185 @@
-const API_BASE_URL = 'http://localhost:5000/api/products';
+const API_BASE_URL = 'http://127.0.0.1:5000/api';
 
 document.addEventListener('DOMContentLoaded', () => {
-    fetchProducts();
+    checkAuthStatus();
 
-    // Attach Event Listeners
-    document.getElementById('product-form').addEventListener('submit', handleAddProduct);
-    document.getElementById('refresh-btn').addEventListener('click', fetchProducts);
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
+
+    const productForm = document.getElementById('product-form');
+    if (productForm) {
+        productForm.addEventListener('submit', handleAddProduct);
+    }
+
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadProducts);
+    }
 });
 
-// GET: Fetch products from Flask backend and render to DOM
-async function fetchProducts() {
-    const tableBody = document.getElementById('inventory-table-body');
-    tableBody.innerHTML = '<tr><td colspan="7">Loading inventory data...</td></tr>';
+function getAuthHeader() {
+    const token = localStorage.getItem('adminToken');
+    return token ? `Bearer ${token}` : '';
+}
 
-    try {
-        const response = await fetch(API_BASE_URL);
-        const result = await response.json();
+function checkAuthStatus() {
+    const token = localStorage.getItem('adminToken');
+    const loginModal = document.getElementById('login-modal');
+    const userControls = document.getElementById('user-controls');
 
-        if (result.success) {
-            renderTable(result.data);
-        } else {
-            tableBody.innerHTML = '<tr><td colspan="7">Failed to load data.</td></tr>';
-        }
-    } catch (error) {
-        console.error('Error fetching inventory:', error);
-        tableBody.innerHTML = '<tr><td colspan="7">API Connection Error. Ensure Backend is running.</td></tr>';
+    if (!token) {
+        if (loginModal) loginModal.classList.remove('hidden');
+        if (userControls) userControls.classList.add('hidden');
+    } else {
+        if (loginModal) loginModal.classList.add('hidden');
+        if (userControls) userControls.classList.remove('hidden');
+        loadProducts();
     }
 }
 
-// Render product list to HTML Table
+async function handleLogin(e) {
+    e.preventDefault();
+
+    const usernameInput = document.getElementById('login-user').value;
+    const passwordInput = document.getElementById('login-pass').value;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: usernameInput,
+                password: passwordInput
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            localStorage.setItem('adminToken', data.token);
+            checkAuthStatus();
+        } else {
+            alert(data.message || 'Invalid Credentials');
+        }
+    } catch (err) {
+        alert('Could not connect to authentication server. Ensure Flask backend is running.');
+    }
+}
+
+function handleLogout() {
+    localStorage.removeItem('adminToken');
+    checkAuthStatus();
+}
+
+async function loadProducts() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/products`, {
+            headers: { 'Authorization': getAuthHeader() }
+        });
+
+        const data = await response.json();
+
+        if (response.status === 401) {
+            handleLogout();
+            return;
+        }
+
+        if (data.success) {
+            renderTable(data.data);
+        } else {
+            alert(`Error fetching products: ${data.error}`);
+        }
+    } catch (err) {
+        const tableBody = document.getElementById('inventory-table-body');
+        if (tableBody) {
+            tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444; padding:20px;">API Connection Error. Ensure Backend is running.</td></tr>`;
+        }
+    }
+}
+
 function renderTable(products) {
     const tableBody = document.getElementById('inventory-table-body');
-    tableBody.innerHTML = '';
+    if (!tableBody) return;
 
-    if (products.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="7">No products found in inventory.</td></tr>';
+    if (!products || products.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px;">No products found in inventory.</td></tr>`;
         return;
     }
 
-    products.forEach(product => {
-        const row = document.createElement('tr');
-        
-        // Badge styling based on status
-        let badgeClass = 'badge-in-stock';
-        if (product.status === 'Low Stock') badgeClass = 'badge-low-stock';
-        if (product.status === 'Out of Stock') badgeClass = 'badge-out-of-stock';
-
-        row.innerHTML = `
-            <td>#${product.id}</td>
-            <td><strong>${escapeHtml(product.name)}</strong></td>
-            <td>${escapeHtml(product.category)}</td>
-            <td>${product.quantity}</td>
-            <td>$${parseFloat(product.price).toFixed(2)}</td>
-            <td><span class="badge ${badgeClass}">${product.status}</span></td>
+    tableBody.innerHTML = products.map(item => `
+        <tr>
+            <td><strong>#${item.id}</strong></td>
+            <td>${item.name}</td>
+            <td>${item.category}</td>
+            <td>${item.quantity}</td>
+            <td>$${parseFloat(item.price).toFixed(2)}</td>
+            <td><span class="badge ${getBadgeClass(item.status)}">${item.status}</span></td>
             <td>
-                <button class="btn btn-danger" onclick="deleteProduct(${product.id})">Delete</button>
+                <button class="btn btn-secondary" onclick="deleteProduct(${item.id})" style="padding: 4px 8px; font-size: 0.8rem; background-color: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Delete</button>
             </td>
-        `;
-        tableBody.appendChild(row);
-    });
+        </tr>
+    `).join('');
 }
 
-// POST: Send new product details to Flask backend
-async function handleAddProduct(event) {
-    event.preventDefault();
+function getBadgeClass(status) {
+    switch (status) {
+        case 'In Stock': return 'badge-success';
+        case 'Low Stock': return 'badge-warning';
+        case 'Out of Stock': return 'badge-danger';
+        default: return '';
+    }
+}
 
-    const newProduct = {
-        name: document.getElementById('name').value,
-        category: document.getElementById('category').value,
-        quantity: parseInt(document.getElementById('quantity').value),
-        price: parseFloat(document.getElementById('price').value)
-    };
+async function handleAddProduct(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('name').value;
+    const category = document.getElementById('category').value;
+    const quantity = document.getElementById('quantity').value;
+    const price = document.getElementById('price').value;
 
     try {
-        const response = await fetch(API_BASE_URL, {
+        const response = await fetch(`${API_BASE_URL}/products`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newProduct)
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': getAuthHeader()
+            },
+            body: JSON.stringify({ name, category, quantity, price })
         });
 
-        const result = await response.json();
-        if (result.success) {
+        const data = await response.json();
+
+        if (data.success) {
             document.getElementById('product-form').reset();
-            fetchProducts();
+            loadProducts();
         } else {
-            alert('Failed to add product: ' + result.error);
+            alert(`Failed to add product: ${data.error}`);
         }
-    } catch (error) {
-        console.error('Error adding product:', error);
-        alert('API Connection Failed');
+    } catch (err) {
+        alert('API Connection Failed.');
     }
 }
 
-// DELETE: Send delete request for specific product ID
-async function deleteProduct(productId) {
-    if (!confirm(`Are you sure you want to delete Product #${productId}?`)) return;
+async function deleteProduct(id) {
+    if (!confirm(`Are you sure you want to delete product #${id}?`)) return;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/${productId}`, {
-            method: 'DELETE'
+        const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': getAuthHeader() }
         });
 
-        const result = await response.json();
-        if (result.success) {
-            fetchProducts();
-        } else {
-            alert('Delete failed: ' + result.error);
-        }
-    } catch (error) {
-        console.error('Error deleting product:', error);
-    }
-}
+        const data = await response.json();
 
-// Utility to sanitize HTML
-function escapeHtml(str) {
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        if (data.success) {
+            loadProducts();
+        } else {
+            alert(`Failed to delete product: ${data.error}`);
+        }
+    } catch (err) {
+        alert('API Connection Failed.');
+    }
 }
